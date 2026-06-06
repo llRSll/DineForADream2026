@@ -29,7 +29,7 @@ export type EventData = {
   ungroupedQuestions: Question[];
   pollCounts: number[];
   pollTotal: number;
-  surveySettings: SurveySettings | null;
+  surveySettings: SurveySettings;
   surveyQuestions: SurveyQuestion[];
   surveyAnswers: SurveyAnswer[];
   surveyGroups: SurveyAnswerGroup[];
