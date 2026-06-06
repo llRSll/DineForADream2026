@@ -154,8 +154,8 @@ const SurveyForm = ({ onSaved }: SurveyFormProps) => {
           Share your feedback
         </h2>
         <p className="mt-2 text-sm text-ink-muted">
-          Fill this in anytime during the night. Results are shared at the end
-          of the evening — not live on screen.
+          Please fill this in anytime during the night for your chance to win a
+          hamper. Results will be shared at the end of the evening.
         </p>
         <p className="mt-3 text-sm font-medium text-brand">
           {answeredCount} of {questions.length} answered
