@@ -1,47 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import EventLogo from "@/components/EventLogo";
 import { useEventData } from "@/components/useEventData";
 import JoinQR from "@/components/JoinQR";
-import PollResults from "@/components/PollResults";
 import QuestionClusters from "@/components/QuestionClusters";
-import ScheduleList from "@/components/ScheduleList";
+import SurveyResults from "@/components/SurveyResults";
 import { branding } from "@/lib/branding";
-
-type Stat = { label: string; value: number };
-
-const StatGroup = ({ stats }: { stats: Stat[] }) => (
-  <div className="flex items-stretch divide-x divide-stage-border overflow-hidden rounded-xl border border-stage-border bg-white shadow-sm">
-    {stats.map((stat) => (
-      <div key={stat.label} className="px-4 py-2 text-center">
-        <p className="font-display text-xl font-semibold leading-none tabular-nums text-ink">
-          {stat.value}
-        </p>
-        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          {stat.label}
-        </p>
-      </div>
-    ))}
-  </div>
-);
-
-const SectionHead = ({
-  kicker,
-  title,
-}: {
-  kicker: string;
-  title: string;
-}) => (
-  <div className="mb-3 shrink-0">
-    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand">
-      {kicker}
-    </p>
-    <h2 className="mt-0.5 font-display text-lg font-semibold tracking-tight text-ink">
-      {title}
-    </h2>
-  </div>
-);
 
 const getFullscreenQrSize = () =>
   Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.42);
@@ -51,6 +16,22 @@ const PresentPage = () => {
   const [joinUrl, setJoinUrl] = useState("");
   const [qrFullscreen, setQrFullscreen] = useState(false);
   const [fullscreenQrSize, setFullscreenQrSize] = useState(320);
+
+  const showResults = data.surveySettings.show_results;
+  const textQuestions = useMemo(
+    () => data.surveyQuestions.filter((question) => question.type === "text"),
+    [data.surveyQuestions],
+  );
+  const allTextAnswers = useMemo(
+    () =>
+      data.surveyAnswers
+        .filter((answer) => answer.custom_text?.trim())
+        .map((answer) => ({
+          questionId: answer.question_id,
+          text: answer.custom_text!.trim(),
+        })),
+    [data.surveyAnswers],
+  );
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
@@ -70,14 +51,9 @@ const PresentPage = () => {
     if (!qrFullscreen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        handleCloseQrFullscreen();
-      }
+      if (event.key === "Escape") handleCloseQrFullscreen();
     };
-
-    const handleResize = () => {
-      setFullscreenQrSize(getFullscreenQrSize());
-    };
+    const handleResize = () => setFullscreenQrSize(getFullscreenQrSize());
 
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", handleKeyDown);
@@ -102,7 +78,6 @@ const PresentPage = () => {
           aria-label="Full screen join QR code"
         >
           <div className="dot-grid pointer-events-none absolute inset-0 opacity-50" />
-
           <button
             type="button"
             onClick={handleCloseQrFullscreen}
@@ -111,7 +86,6 @@ const PresentPage = () => {
           >
             Exit full screen
           </button>
-
           <div className="relative flex max-h-full flex-col items-center justify-center">
             <EventLogo size="lg" showTagline tone="dark" />
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-white/70">
@@ -121,9 +95,9 @@ const PresentPage = () => {
               {branding.eventTitle}
             </h1>
             <p className="mt-3 max-w-md text-base leading-relaxed text-white/80">
-              Scan to vote in live polls and ask questions from your phone.
+              Scan to complete tonight&apos;s survey and ask questions from your
+              phone.
             </p>
-
             <div className="mt-8">
               <JoinQR
                 url={joinUrl}
@@ -133,7 +107,6 @@ const PresentPage = () => {
                 padding="large"
               />
             </div>
-
             <p className="mt-6 text-sm font-semibold uppercase tracking-[0.2em] text-white/75">
               Scan to join
             </p>
@@ -143,101 +116,100 @@ const PresentPage = () => {
 
       <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col px-6 py-4">
         <header className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-4">
-          <EventLogo size="md" showTagline />
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="flex items-center gap-2 rounded-full border border-stage-border bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-accent-red shadow-sm">
-              <span className="live-dot" />
-              Live
-            </span>
-            <StatGroup
-              stats={[
-                { label: "Questions", value: data.questions.length },
-                { label: "Votes", value: data.pollTotal },
-                { label: "Themes", value: data.groupedQuestions.length },
-              ]}
-            />
+          <div>
+            <EventLogo size="md" showTagline />
+            <p className="mt-1 text-sm text-ink-muted">
+              {showResults ? "Feedback segment" : "Waiting for feedback segment"}
+            </p>
           </div>
-        </header>
-
-        <div className="grid min-h-0 flex-1 grid-cols-3 grid-rows-2 gap-4">
-          <section className="brand-surface group relative flex min-h-0 flex-col items-center justify-center overflow-hidden rounded-2xl px-4 py-5 text-center text-white shadow-lg">
-            <div className="dot-grid pointer-events-none absolute inset-0 opacity-50" />
-
+          <div className="flex flex-wrap items-center gap-2.5">
             {joinUrl ? (
               <button
                 type="button"
                 onClick={handleOpenQrFullscreen}
-                className="absolute right-3 top-3 z-10 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white backdrop-blur-sm transition hover:bg-white/20"
-                aria-label="Show full screen QR code"
+                className="rounded-full border border-stage-border bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-brand shadow-sm transition hover:border-brand"
               >
-                Full screen
+                Full screen QR
               </button>
             ) : null}
+            <div className="flex items-stretch divide-x divide-stage-border overflow-hidden rounded-xl border border-stage-border bg-white shadow-sm">
+              <div className="px-4 py-2 text-center">
+                <p className="font-display text-xl font-semibold leading-none tabular-nums text-ink">
+                  {data.surveyResponseCount}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Survey replies
+                </p>
+              </div>
+              <div className="px-4 py-2 text-center">
+                <p className="font-display text-xl font-semibold leading-none tabular-nums text-ink">
+                  {data.groupedQuestions.length}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Q&amp;A themes
+                </p>
+              </div>
+            </div>
+          </div>
+        </header>
 
-            <button
-              type="button"
-              onClick={joinUrl ? handleOpenQrFullscreen : undefined}
-              disabled={!joinUrl}
-              className="relative flex min-h-0 flex-col items-center justify-center disabled:cursor-default"
-              aria-label={joinUrl ? "Show full screen QR code" : undefined}
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                Presents
-              </p>
-              <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-white">
-                {branding.eventTitle}
-              </h2>
-              <p className="mt-1 max-w-[200px] text-xs leading-snug text-white/75">
-                Scan to vote and ask questions from your phone.
-              </p>
-
-              {joinUrl ? (
-                <div className="mt-3 transition-transform group-hover:scale-[1.02]">
-                  <JoinQR url={joinUrl} size={148} tone="dark" showCaption={false} />
-                </div>
-              ) : null}
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                Scan to join
-              </p>
-            </button>
-          </section>
-
-          <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl p-5 lg:col-span-2">
-            <SectionHead kicker="Live now" title="Audience poll" />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {data.activePoll ? (
-                <PollResults
-                  poll={data.activePoll}
-                  counts={data.pollCounts}
-                  total={data.pollTotal}
+        {showResults ? (
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
+            <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl p-5 lg:col-span-3">
+              <div className="mb-3 shrink-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand">
+                  From the room
+                </p>
+                <h2 className="mt-0.5 font-display text-lg font-semibold tracking-tight text-ink">
+                  Survey results
+                </h2>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <SurveyResults
+                  choiceResults={data.surveyChoiceResults}
+                  textQuestions={textQuestions}
+                  groupedAnswers={data.groupedSurveyAnswers}
+                  allTextAnswers={allTextAnswers}
+                  large
                 />
-              ) : (
-                <div className="flex h-full min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-stage-border text-center">
-                  <p className="font-display text-lg text-ink-muted">
-                    No poll open right now
-                  </p>
-                  <p className="mt-0.5 text-sm text-ink-faint">
-                    The next poll will appear here automatically.
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl p-5 lg:col-span-2">
-            <SectionHead kicker="From the room" title="Question themes" />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <QuestionClusters groups={data.groupedQuestions} />
-            </div>
+            <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl p-5 lg:col-span-2">
+              <div className="mb-3 shrink-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand">
+                  Live Q&amp;A
+                </p>
+                <h2 className="mt-0.5 font-display text-lg font-semibold tracking-tight text-ink">
+                  Question themes
+                </h2>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <QuestionClusters groups={data.groupedQuestions} />
+              </div>
+            </section>
+          </div>
+        ) : (
+          <section className="panel flex min-h-0 flex-1 flex-col items-center justify-center rounded-2xl p-8 text-center">
+            <p className="font-display text-3xl font-semibold text-ink">
+              Feedback segment not live yet
+            </p>
+            <p className="mt-3 max-w-xl text-base text-ink-muted">
+              Open the survey for guests during the night, then enable{" "}
+              <span className="font-semibold text-brand">Show on presenter</span>{" "}
+              in the control room when you&apos;re ready to review results on
+              screen.
+            </p>
+            {joinUrl ? (
+              <div className="mt-8">
+                <JoinQR url={joinUrl} size={180} showCaption={false} />
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-ink-faint">
+                  Guests can still join and complete the survey
+                </p>
+              </div>
+            ) : null}
           </section>
-
-          <section className="panel flex min-h-0 flex-col overflow-hidden rounded-2xl p-5">
-            <SectionHead kicker="The evening" title="Agenda" />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <ScheduleList items={data.schedule} />
-            </div>
-          </section>
-        </div>
+        )}
       </div>
     </main>
   );

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/session";
 
 const bodySchema = z.object({
-  scope: z.enum(["questions", "votes", "all"]),
+  scope: z.enum(["questions", "votes", "survey", "all"]),
 });
 
 export const POST = async (request: Request) => {
@@ -26,6 +26,10 @@ export const POST = async (request: Request) => {
   }
   if (scope === "votes" || scope === "all") {
     await supabase.from("votes").delete().not("id", "is", null);
+  }
+  if (scope === "survey" || scope === "all") {
+    await supabase.from("survey_answers").delete().not("id", "is", null);
+    await supabase.from("survey_answer_groups").delete().not("id", "is", null);
   }
 
   return NextResponse.json({ ok: true });

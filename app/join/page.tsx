@@ -65,7 +65,7 @@ const JoinPage = () => {
 
           <h1 className="font-display text-2xl font-bold text-ink">Welcome</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Sign up to join tonight&apos;s polls and Q&amp;A.
+            Sign up to complete tonight&apos;s survey and Q&amp;A.
           </p>
 
           <div className="mt-6 flex flex-col gap-4">

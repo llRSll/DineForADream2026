@@ -4,29 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import EventLogo from "@/components/EventLogo";
 import { useEventData } from "@/components/useEventData";
 import { branding } from "@/lib/branding";
-import type { Poll } from "@/lib/types";
+import type { SurveyQuestion, SurveyQuestionType } from "@/lib/types";
 
 const inputClassName =
   "w-full rounded-xl border border-stage-border bg-white px-3.5 py-2.5 text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
 
-const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F"];
-
-type Suggestion = { question: string; options: string[] };
-
-const POLL_SUGGESTIONS: Suggestion[] = [
-  {
-    question: "How did you hear about tonight?",
-    options: ["A friend", "Social media", "OzGeeOm", "Other"],
-  },
-  {
-    question: "What brought you here tonight?",
-    options: ["The cause", "Friends & family", "Company table", "The food!"],
-  },
-  {
-    question: "Would you join us again next year?",
-    options: ["Absolutely", "Probably", "Maybe"],
-  },
-];
+const TYPE_LABELS: Record<SurveyQuestionType, string> = {
+  single: "Single choice",
+  multi: "Multi select",
+  text: "Open text",
+};
 
 const AdminLogin = ({ onSuccess }: { onSuccess: () => void }) => {
   const [password, setPassword] = useState("");
@@ -115,7 +102,9 @@ const Panel = ({ kicker, title, action, children }: PanelProps) => (
 const AdminDashboard = () => {
   const data = useEventData();
   const [question, setQuestion] = useState("");
+  const [questionType, setQuestionType] = useState<SurveyQuestionType>("single");
   const [options, setOptions] = useState<string[]>(["", ""]);
+  const [allowCustom, setAllowCustom] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [scheduleRaw, setScheduleRaw] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -126,13 +115,15 @@ const AdminDashboard = () => {
     setTimeout(() => setStatus(null), durationMs);
   };
 
-  const countVotes = (pollId: string) =>
-    data.votes.filter((vote) => vote.poll_id === pollId).length;
+  const countAnswers = (questionId: string) =>
+    data.surveyAnswers.filter((answer) => answer.question_id === questionId).length;
 
   const resetForm = () => {
     setEditingId(null);
     setQuestion("");
+    setQuestionType("single");
     setOptions(["", ""]);
+    setAllowCustom(false);
   };
 
   const handleOptionChange = (index: number, value: string) => {
@@ -140,82 +131,141 @@ const AdminDashboard = () => {
   };
 
   const handleAddOption = () => {
-    setOptions((prev) => (prev.length < 6 ? [...prev, ""] : prev));
+    setOptions((prev) => (prev.length < 8 ? [...prev, ""] : prev));
   };
 
   const handleRemoveOption = (index: number) => {
     setOptions((prev) => (prev.length > 2 ? prev.filter((_, i) => i !== index) : prev));
   };
 
-  const applySuggestion = (suggestion: Suggestion) => {
-    setEditingId(null);
-    setQuestion(suggestion.question);
-    setOptions(suggestion.options);
+  const handleEdit = (item: SurveyQuestion) => {
+    setEditingId(item.id);
+    setQuestion(item.question);
+    setQuestionType(item.type);
+    setOptions(item.options.length >= 2 ? item.options : [...item.options, "", ""]);
+    setAllowCustom(item.allow_custom);
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const handleSavePoll = async (event: React.FormEvent) => {
+  const handleSaveQuestion = async (event: React.FormEvent) => {
     event.preventDefault();
     const cleaned = options.map((option) => option.trim()).filter(Boolean);
-    if (!question.trim() || cleaned.length < 2) {
-      flash("Add a question and at least 2 options");
-      return;
-    }
 
     const payload = editingId
-      ? { action: "update", pollId: editingId, question, options: cleaned }
-      : { action: "create", question, options: cleaned };
+      ? {
+          action: "update",
+          questionId: editingId,
+          question,
+          type: questionType,
+          options: questionType === "text" ? [] : cleaned,
+          allow_custom: questionType === "multi" ? allowCustom : false,
+        }
+      : {
+          action: "create",
+          question,
+          type: questionType,
+          options: questionType === "text" ? [] : cleaned,
+          allow_custom: questionType === "multi" ? allowCustom : false,
+        };
 
-    const response = await fetch("/api/admin/polls", {
+    const response = await fetch("/api/admin/survey", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+
     if (!response.ok) {
-      flash("Could not save poll");
+      const body = await response.json().catch(() => ({}));
+      flash(body.error ?? "Could not save question");
       return;
     }
-    flash(editingId ? "Poll updated" : "Poll saved to your library");
+
+    flash(editingId ? "Question updated" : "Question added");
     resetForm();
   };
 
-  const handleEdit = (poll: Poll) => {
-    setEditingId(poll.id);
-    setQuestion(poll.question);
-    setOptions(poll.options.length >= 2 ? poll.options : [...poll.options, ""]);
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const handleGoLive = async (pollId: string) => {
-    await fetch("/api/admin/polls", {
+  const handleDelete = async (questionId: string) => {
+    await fetch("/api/admin/survey", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "golive", pollId }),
+      body: JSON.stringify({ action: "delete", questionId }),
     });
-    flash("Poll is now live");
+    if (editingId === questionId) resetForm();
+    flash("Question deleted");
   };
 
-  const handleClosePoll = async () => {
-    await fetch("/api/admin/polls", {
+  const handleMove = async (questionId: string, direction: "up" | "down") => {
+    const ids = data.surveyQuestions.map((item) => item.id);
+    const index = ids.indexOf(questionId);
+    if (index < 0) return;
+    const swapWith = direction === "up" ? index - 1 : index + 1;
+    if (swapWith < 0 || swapWith >= ids.length) return;
+    [ids[index], ids[swapWith]] = [ids[swapWith], ids[index]];
+
+    await fetch("/api/admin/survey", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "close" }),
+      body: JSON.stringify({ action: "reorder", orderedIds: ids }),
     });
-    flash("Poll closed");
   };
 
-  const handleDeletePoll = async (pollId: string) => {
-    await fetch("/api/admin/polls", {
+  const handleToggleOpen = async () => {
+    await fetch("/api/admin/survey", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", pollId }),
+      body: JSON.stringify({
+        action: "setOpen",
+        is_open: !data.surveySettings.is_open,
+      }),
     });
-    if (editingId === pollId) resetForm();
-    flash("Poll deleted");
+    flash(data.surveySettings.is_open ? "Survey closed" : "Survey open for guests");
+  };
+
+  const handleToggleResults = async () => {
+    await fetch("/api/admin/survey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "setShowResults",
+        show_results: !data.surveySettings.show_results,
+      }),
+    });
+    flash(
+      data.surveySettings.show_results
+        ? "Presenter results hidden"
+        : "Presenter results live",
+    );
+  };
+
+  const handleSeed = async () => {
+    const response = await fetch("/api/admin/survey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "seed" }),
+    });
+    const body = await response.json().catch(() => ({}));
+    flash(body.seeded ? `Loaded ${body.seeded} default questions` : "Survey already has questions");
+  };
+
+  const handleGroupText = async (questionId: string) => {
+    flash("Grouping responses…");
+    const response = await fetch("/api/admin/survey/group", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      flash("Grouping failed");
+      return;
+    }
+    const engineLabel = body.engine === "openai" ? "AI" : "offline mock";
+    const suffix = body.error ? ` — ${body.error}` : "";
+    flash(`Grouped into ${body.clusters} theme(s) via ${engineLabel}${suffix}`, 10000);
   };
 
   const handleGroup = async () => {
-    flash("Grouping…");
+    flash("Grouping Q&A…");
     const response = await fetch("/api/admin/group", { method: "POST" });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -255,7 +305,7 @@ const AdminDashboard = () => {
     flash(response.ok ? `Published ${body.items} item(s)` : body.error ?? "Failed");
   };
 
-  const handleReset = async (scope: "questions" | "votes" | "all") => {
+  const handleReset = async (scope: "questions" | "survey" | "all") => {
     await fetch("/api/admin/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -278,13 +328,15 @@ const AdminDashboard = () => {
           <div className="flex items-center gap-5 text-sm text-ink-muted">
             <span>
               <span className="font-semibold text-ink">
-                {data.questions.length}
+                {data.surveyResponseCount}
               </span>{" "}
-              questions
+              survey replies
             </span>
             <span>
-              <span className="font-semibold text-ink">{data.pollTotal}</span>{" "}
-              votes
+              <span className="font-semibold text-ink">
+                {data.questions.length}
+              </span>{" "}
+              Q&amp;A
             </span>
             <a
               className="font-medium text-brand hover:underline"
@@ -303,130 +355,150 @@ const AdminDashboard = () => {
           </p>
         ) : null}
 
-        {/* Live now banner */}
-        {data.activePoll ? (
-          <div className="overflow-hidden rounded-3xl bg-brand text-white shadow-lg">
-            <div className="flex flex-wrap items-center justify-between gap-4 p-6">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/80">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-                  Live on screen now
-                </p>
-                <p className="mt-1.5 font-display text-2xl font-semibold">
-                  {data.activePoll.question}
-                </p>
-                <p className="mt-1 text-sm text-white/75">
-                  {data.pollTotal} {data.pollTotal === 1 ? "vote" : "votes"} so far
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleClosePoll}
-                className="shrink-0 rounded-xl bg-white px-5 py-2.5 font-semibold text-brand transition hover:bg-white/90"
-              >
-                Stop poll
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-3xl border border-dashed border-stage-border bg-white/50 px-6 py-5 text-center text-sm text-ink-muted">
-            No poll is live. Pick one from your library below and hit{" "}
-            <span className="font-semibold text-brand">Go live</span>.
-          </div>
-        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={handleToggleOpen}
+            className={`rounded-2xl border px-5 py-4 text-left transition ${
+              data.surveySettings.is_open
+                ? "border-brand bg-brand text-white"
+                : "border-stage-border bg-white hover:border-brand"
+            }`}
+          >
+            <p className="text-xs font-bold uppercase tracking-[0.16em] opacity-80">
+              Guest survey
+            </p>
+            <p className="mt-1 font-display text-xl font-semibold">
+              {data.surveySettings.is_open ? "Open for guests" : "Closed"}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleResults}
+            className={`rounded-2xl border px-5 py-4 text-left transition ${
+              data.surveySettings.show_results
+                ? "border-accent-gold bg-accent-gold/15"
+                : "border-stage-border bg-white hover:border-brand"
+            }`}
+          >
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-ink-faint">
+              Presenter segment
+            </p>
+            <p className="mt-1 font-display text-xl font-semibold text-ink">
+              {data.surveySettings.show_results
+                ? "Results on screen"
+                : "Results hidden"}
+            </p>
+          </button>
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Left: poll library + schedule */}
           <div className="flex flex-col gap-6 lg:col-span-2">
             <Panel
-              kicker="One click to go live"
-              title="Poll library"
+              kicker="Editable"
+              title="Evening survey"
               action={
-                <span className="rounded-full bg-stage-bg px-3 py-1 text-xs font-medium text-ink-muted">
-                  {data.polls.length} saved
-                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSeed}
+                    className="rounded-full border border-stage-border px-3 py-1 text-xs font-medium text-ink-muted hover:border-brand hover:text-brand"
+                  >
+                    Load defaults
+                  </button>
+                  <span className="rounded-full bg-stage-bg px-3 py-1 text-xs font-medium text-ink-muted">
+                    {data.surveyQuestions.length} questions
+                  </span>
+                </div>
               }
             >
-              {data.polls.length === 0 ? (
+              {data.surveyQuestions.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-stage-border py-10 text-center">
-                  <p className="font-medium text-ink">No polls saved yet</p>
+                  <p className="font-medium text-ink">No survey questions yet</p>
                   <p className="mt-1 text-sm text-ink-muted">
-                    Add one on the right, or tap a quick-start suggestion.
+                    Add questions on the right, or load the default set.
                   </p>
                 </div>
               ) : (
                 <ul className="flex flex-col gap-3">
-                  {data.polls.map((poll) => {
-                    const votes = countVotes(poll.id);
+                  {data.surveyQuestions.map((item, index) => {
+                    const answers = countAnswers(item.id);
                     return (
                       <li
-                        key={poll.id}
-                        className={`rounded-2xl border p-4 transition ${
-                          poll.is_open
-                            ? "border-brand bg-brand-light/40"
-                            : "border-stage-border bg-white"
-                        }`}
+                        key={item.id}
+                        className="rounded-2xl border border-stage-border bg-white p-4"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            {poll.is_open ? (
-                              <span className="mb-1.5 inline-flex items-center gap-1.5 rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
-                                Live
-                              </span>
-                            ) : null}
+                            <span className="mb-1.5 inline-flex rounded-full bg-brand-light px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand">
+                              {TYPE_LABELS[item.type]}
+                            </span>
                             <p className="font-display text-lg font-semibold leading-snug text-ink">
-                              {poll.question}
+                              {item.question}
                             </p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {poll.options.map((option, index) => (
-                                <span
-                                  key={index}
-                                  className="inline-flex items-center gap-1.5 rounded-full border border-stage-border bg-stage-bg px-2.5 py-1 text-xs text-ink-muted"
-                                >
-                                  <span className="font-bold text-ink-faint">
-                                    {OPTION_LETTERS[index] ?? index + 1}
+                            {item.type !== "text" ? (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {item.options.map((option, optionIndex) => (
+                                  <span
+                                    key={optionIndex}
+                                    className="rounded-full border border-stage-border bg-stage-bg px-2.5 py-1 text-xs text-ink-muted"
+                                  >
+                                    {option}
                                   </span>
-                                  {option}
-                                </span>
-                              ))}
-                            </div>
+                                ))}
+                                {item.allow_custom ? (
+                                  <span className="rounded-full border border-dashed border-stage-border px-2.5 py-1 text-xs text-ink-faint">
+                                    + custom
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
                             <p className="mt-2 text-xs text-ink-faint">
-                              {votes} {votes === 1 ? "vote" : "votes"}
+                              {answers} {answers === 1 ? "response" : "responses"}
                             </p>
                           </div>
                         </div>
 
                         <div className="mt-3.5 flex flex-wrap gap-2">
-                          {poll.is_open ? (
-                            <button
-                              type="button"
-                              onClick={handleClosePoll}
-                              className="rounded-lg border border-accent-red/40 px-4 py-2 text-sm font-semibold text-accent-red transition hover:border-accent-red hover:bg-accent-red/5"
-                            >
-                              Stop
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleGoLive(poll.id)}
-                              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
-                            >
-                              ▶ Go live
-                            </button>
-                          )}
                           <button
                             type="button"
-                            onClick={() => handleEdit(poll)}
+                            onClick={() => handleMove(item.id, "up")}
+                            disabled={index === 0}
+                            className="rounded-lg border border-stage-border px-3 py-2 text-sm text-ink-muted disabled:opacity-40"
+                            aria-label="Move up"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMove(item.id, "down")}
+                            disabled={index === data.surveyQuestions.length - 1}
+                            className="rounded-lg border border-stage-border px-3 py-2 text-sm text-ink-muted disabled:opacity-40"
+                            aria-label="Move down"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(item)}
                             className="rounded-lg border border-stage-border px-4 py-2 text-sm font-medium text-ink-muted transition hover:border-brand hover:text-ink"
                           >
                             Edit
                           </button>
+                          {item.type === "text" && answers > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleGroupText(item.id)}
+                              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
+                            >
+                              Group responses
+                            </button>
+                          ) : null}
                           <button
                             type="button"
-                            onClick={() => handleDeletePoll(poll.id)}
+                            onClick={() => handleDelete(item.id)}
                             className="rounded-lg border border-stage-border px-3 py-2 text-sm text-ink-faint transition hover:border-accent-red hover:text-accent-red"
-                            aria-label={`Delete poll: ${poll.question}`}
+                            aria-label={`Delete question: ${item.question}`}
                           >
                             Delete
                           </button>
@@ -468,12 +540,11 @@ const AdminDashboard = () => {
             </Panel>
           </div>
 
-          {/* Right: add/edit poll + Q&A + reset */}
           <div className="flex flex-col gap-6">
             <div ref={formRef}>
               <Panel
-                kicker={editingId ? "Editing" : "Prepare ahead"}
-                title={editingId ? "Edit poll" : "Add a poll"}
+                kicker={editingId ? "Editing" : "Build the survey"}
+                title={editingId ? "Edit question" : "Add question"}
                 action={
                   editingId ? (
                     <button
@@ -486,78 +557,87 @@ const AdminDashboard = () => {
                   ) : undefined
                 }
               >
-                {!editingId ? (
-                  <div className="mb-4">
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wider text-ink-faint">
-                      Quick start
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {POLL_SUGGESTIONS.map((suggestion) => (
-                        <button
-                          key={suggestion.question}
-                          type="button"
-                          onClick={() => applySuggestion(suggestion)}
-                          className="rounded-full border border-stage-border bg-white px-3 py-1.5 text-xs font-medium text-ink-muted transition hover:border-brand hover:text-brand"
-                        >
-                          {suggestion.question}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                <form onSubmit={handleSavePoll} className="flex flex-col gap-3">
+                <form onSubmit={handleSaveQuestion} className="flex flex-col gap-3">
                   <input
                     type="text"
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
-                    placeholder="Poll question"
-                    aria-label="Poll question"
+                    placeholder="Survey question"
+                    aria-label="Survey question"
                     className={inputClassName}
                   />
-                  {options.map((option, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-light text-sm font-bold text-brand">
-                        {OPTION_LETTERS[index] ?? index + 1}
-                      </span>
-                      <input
-                        type="text"
-                        value={option}
-                        onChange={(event) =>
-                          handleOptionChange(index, event.target.value)
-                        }
-                        placeholder={`Option ${index + 1}`}
-                        aria-label={`Option ${index + 1}`}
-                        className={inputClassName}
-                      />
-                      {options.length > 2 ? (
+
+                  <label className="text-sm font-medium text-ink-muted">
+                    Question type
+                    <select
+                      value={questionType}
+                      onChange={(event) =>
+                        setQuestionType(event.target.value as SurveyQuestionType)
+                      }
+                      aria-label="Question type"
+                      className={`mt-1.5 ${inputClassName}`}
+                    >
+                      <option value="single">Single choice</option>
+                      <option value="multi">Multi select</option>
+                      <option value="text">Open text</option>
+                    </select>
+                  </label>
+
+                  {questionType !== "text" ? (
+                    <>
+                      {options.map((option, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={option}
+                            onChange={(event) =>
+                              handleOptionChange(index, event.target.value)
+                            }
+                            placeholder={`Option ${index + 1}`}
+                            aria-label={`Option ${index + 1}`}
+                            className={inputClassName}
+                          />
+                          {options.length > 2 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOption(index)}
+                              aria-label={`Remove option ${index + 1}`}
+                              className="shrink-0 rounded-lg border border-stage-border px-2.5 py-2 text-sm text-ink-faint transition hover:border-accent-red hover:text-accent-red"
+                            >
+                              ✕
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                      {options.length < 8 ? (
                         <button
                           type="button"
-                          onClick={() => handleRemoveOption(index)}
-                          aria-label={`Remove option ${index + 1}`}
-                          className="shrink-0 rounded-lg border border-stage-border px-2.5 py-2 text-sm text-ink-faint transition hover:border-accent-red hover:text-accent-red"
+                          onClick={handleAddOption}
+                          className="self-start rounded-lg border border-stage-border px-3 py-2 text-sm font-medium text-ink-muted transition hover:border-brand hover:text-brand"
                         >
-                          ✕
+                          + Add option
                         </button>
                       ) : null}
-                    </div>
-                  ))}
+                    </>
+                  ) : null}
 
-                  {options.length < 6 ? (
-                    <button
-                      type="button"
-                      onClick={handleAddOption}
-                      className="self-start rounded-lg border border-stage-border px-3 py-2 text-sm font-medium text-ink-muted transition hover:border-brand hover:text-brand"
-                    >
-                      + Add option
-                    </button>
+                  {questionType === "multi" ? (
+                    <label className="flex items-center gap-2 text-sm text-ink-muted">
+                      <input
+                        type="checkbox"
+                        checked={allowCustom}
+                        onChange={(event) => setAllowCustom(event.target.checked)}
+                        className="h-4 w-4 rounded border-stage-border text-brand focus:ring-brand"
+                      />
+                      Allow a custom option
+                    </label>
                   ) : null}
 
                   <button
                     type="submit"
                     className="mt-1 rounded-xl bg-brand px-4 py-2.5 font-semibold text-white transition hover:bg-brand-dark"
                   >
-                    {editingId ? "Save changes" : "Save to library"}
+                    {editingId ? "Save changes" : "Add question"}
                   </button>
                 </form>
               </Panel>
@@ -565,7 +645,7 @@ const AdminDashboard = () => {
 
             <Panel kicker="From the room" title="Q&A grouping">
               <p className="mb-3 text-sm text-ink-muted">
-                Cluster submitted questions into themes for the screen.
+                Cluster submitted questions into themes for the feedback segment.
               </p>
               <button
                 type="button"
@@ -596,17 +676,17 @@ const AdminDashboard = () => {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => handleReset("votes")}
+                  onClick={() => handleReset("survey")}
                   className="rounded-lg border border-stage-border px-3 py-2 text-sm text-ink-muted transition hover:border-brand hover:text-ink"
                 >
-                  Clear votes
+                  Clear survey responses
                 </button>
                 <button
                   type="button"
                   onClick={() => handleReset("questions")}
                   className="rounded-lg border border-stage-border px-3 py-2 text-sm text-ink-muted transition hover:border-brand hover:text-ink"
                 >
-                  Clear questions
+                  Clear Q&amp;A
                 </button>
                 <button
                   type="button"

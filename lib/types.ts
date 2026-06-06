@@ -60,3 +60,53 @@ export type ScheduleItem = {
   position: number;
   created_at: string;
 };
+
+export type SurveyQuestionType = "single" | "multi" | "text";
+
+export type SurveySettings = {
+  id: string;
+  is_open: boolean;
+  show_results: boolean;
+  updated_at: string;
+};
+
+export type SurveyQuestion = {
+  id: string;
+  question: string;
+  type: SurveyQuestionType;
+  options: string[];
+  allow_custom: boolean;
+  position: number;
+  created_at: string;
+};
+
+export type SurveyAnswer = {
+  id: string;
+  question_id: string;
+  attendee_id: string;
+  option_indices: number[] | null;
+  custom_text: string | null;
+  group_id: string | null;
+  created_at: string;
+};
+
+export type SurveyAnswerGroup = {
+  id: string;
+  question_id: string;
+  label: string;
+  summary: string | null;
+  proposed_summary: string | null;
+  count: number;
+  created_at: string;
+};
+
+export type GroupedSurveyAnswers = SurveyAnswerGroup & {
+  answers: SurveyAnswer[];
+};
+
+export type SurveyChoiceResult = {
+  question: SurveyQuestion;
+  counts: number[];
+  customCount: number;
+  respondentCount: number;
+};
