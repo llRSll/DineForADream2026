@@ -108,5 +108,6 @@ export type SurveyChoiceResult = {
   question: SurveyQuestion;
   counts: number[];
   customCount: number;
+  customTexts: string[];
   respondentCount: number;
 };

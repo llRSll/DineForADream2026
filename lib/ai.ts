@@ -50,6 +50,86 @@ const clusterSchema = z.object({
   ),
 });
 
+const surveyClusterSchema = z.object({
+  clusters: z.array(
+    z.object({
+      label: z
+        .string()
+        .describe("Short 2-5 word theme label, e.g. 'Audio & sound'"),
+      summary: z
+        .string()
+        .describe(
+          "One sentence summarising the shared theme of these responses",
+        ),
+      question: z
+        .string()
+        .describe(
+          "A single headline the presenter can read aloud that captures this theme",
+        ),
+      responseIds: z.array(z.string()),
+    }),
+  ),
+});
+
+export const groupSurveyResponses = async (
+  questionText: string,
+  responses: RawQuestion[],
+): Promise<GroupResult> => {
+  if (responses.length === 0) return { clusters: [], engine: "mock" };
+  if (!hasOpenAI()) {
+    return {
+      clusters: mockGroupSurveyResponses(responses),
+      engine: "mock",
+      error: "OPENAI_API_KEY is not set",
+    };
+  }
+
+  try {
+    const { object } = await generateObject({
+      model: openai(MODEL),
+      schema: surveyClusterSchema,
+      prompt: [
+        "You are clustering free-text survey feedback for a charity gala.",
+        `Survey question: "${questionText}"`,
+        "",
+        "Group responses that share the SAME specific theme or suggestion.",
+        "Rules:",
+        "- Keep distinct topics in separate clusters — do NOT lump unrelated feedback together.",
+        "- Responses that only say nothing to improve, no comment, or purely positive praise",
+        "  (e.g. 'Nothing', 'Great event', 'Well done') belong in ONE 'No suggestions' cluster.",
+        "- Constructive criticism about audio, sound, AV, or microphones should be its own cluster.",
+        "- Each cluster needs a clear shared theme; prefer several small clusters over one large catch-all.",
+        "- Very short unique responses (e.g. 'Branding', 'Advertising') can be their own single-item cluster.",
+        "- Every response id must appear in exactly one cluster. Use the exact ids provided.",
+        "",
+        "Responses (JSON):",
+        JSON.stringify(responses),
+      ].join("\n"),
+    });
+
+    const mapped: QuestionCluster[] = object.clusters.map((cluster) => ({
+      label: cluster.label,
+      summary: cluster.summary,
+      question: cluster.question,
+      questionIds: cluster.responseIds,
+    }));
+
+    const valid = sanitiseClusters(mapped, responses);
+    if (valid.length > 0) return { clusters: valid, engine: "openai" };
+    return {
+      clusters: mockGroupSurveyResponses(responses),
+      engine: "mock",
+      error: "AI returned no clusters",
+    };
+  } catch (error) {
+    return {
+      clusters: mockGroupSurveyResponses(responses),
+      engine: "mock",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
 export const groupQuestions = async (
   questions: RawQuestion[],
 ): Promise<GroupResult> => {
@@ -193,6 +273,57 @@ const mockGroupQuestions = (questions: RawQuestion[]): QuestionCluster[] => {
 
 const capitalise = (s: string): string =>
   s.charAt(0).toUpperCase() + s.slice(1);
+
+type ThemeRule = { label: string; pattern: RegExp };
+
+const SURVEY_THEME_RULES: ThemeRule[] = [
+  { label: "No suggestions", pattern: /\b(nothing|no comment|niks|no suggestion|all great|well done|great event|great night|amazing job|lovely)\b/i },
+  { label: "Audio & sound", pattern: /\b(audio|visual|sound|av\b|audible|microphone|speaker|volume)\b/i },
+  { label: "More events", pattern: /\b(more event|get together|bring.*friends|guest speaker|sunshine coast)\b/i },
+  { label: "Auction & prizes", pattern: /\b(auction|whisky|boerewors|boetewors|drinking game|hamper)\b/i },
+  { label: "Advertising", pattern: /\b(advertis|brand|promot|market)\b/i },
+  { label: "Art & decor", pattern: /\b(frame|art\b|decor)\b/i },
+  { label: "Student feedback", pattern: /\b(student|recipient|donation)\b/i },
+];
+
+const matchSurveyTheme = (text: string): string | null => {
+  for (const rule of SURVEY_THEME_RULES) {
+    if (rule.pattern.test(text)) return rule.label;
+  }
+  return null;
+};
+
+const mockGroupSurveyResponses = (responses: RawQuestion[]): QuestionCluster[] => {
+  const byTheme = new Map<string, string[]>();
+
+  for (const response of responses) {
+    const theme = matchSurveyTheme(response.text) ?? `__other__:${response.id}`;
+    const bucket = byTheme.get(theme) ?? [];
+    bucket.push(response.id);
+    byTheme.set(theme, bucket);
+  }
+
+  const clusters: QuestionCluster[] = [];
+
+  for (const [theme, ids] of byTheme) {
+    const items = ids.map((id) => responses.find((r) => r.id === id)!);
+    const label =
+      theme.startsWith("__other__:") && ids.length === 1
+        ? capitalise(items[0].text.slice(0, 40))
+        : theme.startsWith("__other__:")
+          ? "Other feedback"
+          : theme;
+
+    clusters.push({
+      label,
+      summary: "",
+      question: items.sort((a, b) => b.text.length - a.text.length)[0].text,
+      questionIds: ids,
+    });
+  }
+
+  return clusters.sort((a, b) => b.questionIds.length - a.questionIds.length);
+};
 
 // --- Schedule parsing ----------------------------------------------------
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { groupQuestions } from "@/lib/ai";
+import { groupSurveyResponses } from "@/lib/ai";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/session";
 
@@ -45,7 +45,10 @@ export const POST = async (request: Request) => {
     .filter((answer) => answer.custom_text?.trim())
     .map((answer) => ({ id: answer.id, text: answer.custom_text!.trim() }));
 
-  const { clusters, engine, error } = await groupQuestions(raw);
+  const { clusters, engine, error } = await groupSurveyResponses(
+    question.question,
+    raw,
+  );
 
   await supabase
     .from("survey_answers")

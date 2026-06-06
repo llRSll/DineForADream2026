@@ -167,12 +167,15 @@ export const useEventData = (): EventData => {
           return sum + (indices.includes(index) ? 1 : 0);
         }, 0),
       );
-      const customCount = answers.filter((answer) => answer.custom_text?.trim()).length;
+      const customTexts = answers
+        .map((answer) => answer.custom_text?.trim())
+        .filter((text): text is string => Boolean(text));
 
       return {
         question,
         counts,
-        customCount,
+        customCount: customTexts.length,
+        customTexts,
         respondentCount: answers.length,
       };
     });
