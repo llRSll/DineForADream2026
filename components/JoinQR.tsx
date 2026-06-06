@@ -7,6 +7,7 @@ type JoinQRProps = {
   size?: number;
   tone?: "light" | "dark";
   showCaption?: boolean;
+  padding?: "default" | "large";
 };
 
 const JoinQR = ({
@@ -14,12 +15,16 @@ const JoinQR = ({
   size = 220,
   tone = "light",
   showCaption = true,
+  padding = "default",
 }: JoinQRProps) => {
   const isDark = tone === "dark";
+  const paddingClass = padding === "large" ? "p-6" : "p-4";
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="rounded-2xl bg-white p-4 shadow-lg ring-1 ring-black/5">
+      <div
+        className={`rounded-2xl bg-white shadow-lg ring-1 ring-black/5 ${paddingClass}`}
+      >
         <QRCodeSVG value={url} size={size} level="M" />
       </div>
       {showCaption ? (
