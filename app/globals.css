@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background-color: theme(colors.stage.bg);
+  color: theme(colors.ink.DEFAULT);
+}
+
+.stage-gradient {
+  background:
+    radial-gradient(55% 45% at 15% 0%, rgba(0, 119, 73, 0.08), transparent 70%),
+    radial-gradient(40% 35% at 95% 10%, rgba(255, 184, 28, 0.1), transparent 70%),
+    radial-gradient(35% 30% at 80% 100%, rgba(0, 12, 139, 0.06), transparent 70%),
+    theme(colors.stage.bg);
+}
+
+.panel {
+  background-color: theme(colors.stage.panel);
+  border: 1px solid theme(colors.stage.border);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 12px 32px -16px rgba(16, 24, 40, 0.12);
+}
+
+.panel-hover {
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.panel-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 119, 73, 0.25);
+  box-shadow:
+    0 2px 4px rgba(16, 24, 40, 0.05),
+    0 20px 44px -18px rgba(16, 24, 40, 0.2);
+}
+
+.accent-bar {
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    theme(colors.accent.green),
+    theme(colors.accent.gold),
+    theme(colors.accent.blue),
+    theme(colors.accent.red)
+  );
+}
+
+/* Brand gradient surface for hero / QR card. */
+.brand-surface {
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255, 184, 28, 0.18), transparent 55%),
+    radial-gradient(120% 120% at 100% 100%, rgba(0, 12, 139, 0.22), transparent 55%),
+    linear-gradient(160deg, theme(colors.brand.DEFAULT), theme(colors.brand.dark));
+}
+
+/* Subtle dotted texture for large surfaces. */
+.dot-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Pulsing live indicator. */
+.live-dot {
+  display: inline-block;
+  height: 0.6rem;
+  width: 0.6rem;
+  border-radius: 9999px;
+  background-color: theme(colors.accent.red);
+  box-shadow: 0 0 0 0 rgba(224, 60, 49, 0.6);
+  animation: live-pulse 1.8s ease-out infinite;
+}
+
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(224, 60, 49, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 0.55rem rgba(224, 60, 49, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(224, 60, 49, 0);
+  }
+}
